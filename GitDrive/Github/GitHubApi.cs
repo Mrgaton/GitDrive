@@ -1,25 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Reflection.Metadata;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics.Arm;
-using System.Runtime.Intrinsics.X86;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
-namespace GitDrive
+namespace GitDrive.Github
 {
     internal class GitHubApi
-    {
+    {//Ayudasaa https://www.youtube.com/watch?v=nwHqXtk6LHA https://www.youtube.com/watch?v=nwHqXtk6LHA https://www.youtube.com/watch?v=nwHqXtk6LHA
         private static SHA1 hashAlg = SHA1.Create();
 
         private static HttpClient client = new HttpClient(new HttpClientHandler()
@@ -32,7 +21,7 @@ namespace GitDrive
         {
             BaseAddress = new Uri("https://api.github.com/"),
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher,
-            DefaultRequestHeaders = { 
+            DefaultRequestHeaders = {
                 {"User-Agent", "Awesome-Octocat-App" }
             }
         };
@@ -47,7 +36,6 @@ namespace GitDrive
         public static string GitToken { get; set; }
 
         public static string GitRepoName { get; set; }
-
 
         public static string DefaultBranch;
 
@@ -64,11 +52,13 @@ namespace GitDrive
 
             await GetBranch();
         }
+
         public static async Task GetBranch() => await GetBranch(DefaultBranch);
+
         public static async Task GetBranch(string branch)
         {
             JsonNode json = JsonNode.Parse(await SendRequest(new HttpRequestMessage(HttpMethod.Get, "repos/" + GitUsername + "/" + GitRepoName + "/branches/" + branch)));
-           
+
             Console.WriteLine(json);
 
             ComitSha = (string)json["commit"]["sha"];
@@ -84,7 +74,15 @@ namespace GitDrive
         /// <returns></returns>
         public static async Task<string> CreateTree(Tree tree)
         {
-            string jsonstr = JsonSerializer.Serialize(tree, options);
+            var jsonNode = JsonNode.Parse(JsonSerializer.Serialize(tree, options)).AsObject();
+
+            foreach (var el in jsonNode["tree"] as JsonArray)
+            {
+                if (el["content"] == null) jsonNode["tree"][el.GetElementIndex()].AsObject().Remove("content");
+                if (el["content"] != null && el?["sha"] == null) jsonNode["tree"][el.GetElementIndex()].AsObject().Remove("sha");
+            }
+
+            var jsonstr = jsonNode.ToString();
 
             var req = new HttpRequestMessage(HttpMethod.Post, "repos/" + GitUsername + "/" + GitRepoName + "/git/trees")
             {
@@ -95,6 +93,50 @@ namespace GitDrive
 
             Console.WriteLine(json);
 
+            return (string)json["sha"];
+        }
+
+        public static async Task<RemoteTree> GetTree() => await GetTree(DefaultBranch);
+
+        public static async Task<RemoteTree> GetTree(string branchName)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, "repos/" + GitUsername + "/" + GitRepoName + "/git/trees/" + branchName + "?recursive=1");
+
+            string json = await SendRequest(req);
+
+            Console.WriteLine(json);
+
+            return JsonSerializer.Deserialize<RemoteTree>(json);
+        }
+
+        public static async Task<string> CreateCommit(Commit commit)
+        {
+            string jsonstr = JsonSerializer.Serialize(commit, options);
+
+            var req = new HttpRequestMessage(HttpMethod.Post, "repos/" + GitUsername + "/" + GitRepoName + "/git/commits")
+            {
+                Content = new StringContent(jsonstr)
+            };
+
+            JsonNode json = JsonNode.Parse(await SendRequest(req));
+
+            Console.WriteLine(json);
+
+            return (string)json["sha"];
+        }
+
+        public static async Task<string> CreateReference(Reference reference)
+        {
+            string jsonstr = JsonSerializer.Serialize(reference, options);
+
+            var req = new HttpRequestMessage(HttpMethod.Patch, "repos/" + GitUsername + "/" + GitRepoName + "/git/refs/heads/" + DefaultBranch)
+            {
+                Content = new StringContent(jsonstr)
+            };
+
+            JsonNode json = JsonNode.Parse(await SendRequest(req));
+
+            Console.WriteLine(json);
 
             return (string)json["sha"];
         }
@@ -115,13 +157,13 @@ namespace GitDrive
 
             Console.WriteLine(await SendRequest(req));
         }
+
         public static async void GetFile(string path)
         {
             using (var req = new HttpRequestMessage(HttpMethod.Get, "repos/" + GitUsername + "/" + GitRepoName + "/contents/hello.txt"))
             {
                 req.Version = HttpVersion.Version30;
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GitToken);
-            
 
                 using (var res = await client.SendAsync(req))
                 {
@@ -129,19 +171,35 @@ namespace GitDrive
                 }
             }
         }
+
+        /// <summary>
+        /// Get current token rate limit
+        /// </summary>
+        /// <returns></returns>
         public static async Task GetRateLimit()
         {
             using (var req = new HttpRequestMessage(HttpMethod.Get, "rate_limit"))
             {
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GitToken);
-                
-                using(var res = await client.SendAsync(req))
+
+                using (var res = await client.SendAsync(req))
                 {
                     Console.WriteLine(await res.Content.ReadAsStringAsync());
                 }
             }
         }
 
+        public static async Task<byte[]> GetFileRaw(string path) =>await GetFileRaw(GitUsername,GitRepoName,DefaultBranch ,path);
+        public static async Task<byte[]> GetFileRaw(string username, string repo, string branch, string path)
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get, $"https://raw.githubusercontent.com/{username}/{repo}/{branch}/{path}"))
+            {
+                using(var res = await client.SendAsync(req))
+                {
+                    return await res.Content.ReadAsByteArrayAsync();
+                }
+            }
+        }
         private static async Task<string> SendRequest(HttpRequestMessage request)
         {
             using (var req = request)
@@ -151,7 +209,7 @@ namespace GitDrive
 
                 using (var res = await client.SendAsync(req))
                 {
-                    return  await res.Content.ReadAsStringAsync();
+                    return await res.Content.ReadAsStringAsync();
                 }
             }
         }
