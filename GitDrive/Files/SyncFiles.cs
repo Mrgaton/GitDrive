@@ -15,8 +15,11 @@ namespace GitDrive.Files
         {
             var tree = await GitHubApi.GetTree();
 
+            foreach (var obj in tree.Objects.Where(o => o.Path.EndsWith(".json", StringComparison.InvariantCultureIgnoreCase)))
             {
+                string fileInfoPath = SerealizePath(obj.Path);
 
+                if (!File.Exists(fileInfoPath))
                 {
                     await DownloadFile(obj.Path);
                     await DownloadSyncChunks(fileInfoPath);
@@ -24,13 +27,18 @@ namespace GitDrive.Files
                 else
                 {
                     var downloaded = await DownloadData(obj.Path);
+                    var remoteConfig = SerealizedFile.Decode(Encoding.UTF8.GetString(downloaded));
+                    var localConfig = SerealizedFile.Decode(File.ReadAllText(fileInfoPath));
 
+                    Console.ReadLine();
                 }
             }
         }
+        private static async Task DownloadSyncChunks(string syncPath)
         {
+            var fileInfo = SerealizedFile.Decode(File.ReadAllText(syncPath));
 
-            foreach(var chunk in fileInfo.DataChunks)
+            foreach (var chunk in fileInfo.DataChunks)
             {
                 await DownloadFile(chunk);
             }
