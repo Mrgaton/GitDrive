@@ -1,7 +1,5 @@
 ﻿using Microsoft.Win32;
 using System.ComponentModel;
-using System.Numerics;
-using System.Reflection.Metadata.Ecma335;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -14,11 +12,12 @@ namespace GitDrive
 
         private static void CreateFolders(string[] paths)
         {
-            foreach(var p in paths) if (!Directory.Exists(p)) Directory.CreateDirectory(p);
+            foreach (var p in paths) if (!Directory.Exists(p)) Directory.CreateDirectory(p);
         }
+
         public static void InitDrive()
         {
-            CreateFolders([Program.DefaultFilesPath, Program.DefaultDataPath]);
+            CreateFolders([Program.DefaultFilesPath, Program.DefaultSyncPath]);
 
             char installedDrive = GetMappedDrive();
 
@@ -32,16 +31,16 @@ namespace GitDrive
 
             char selectedDrive = GetAvaliableLabel();
 
-            
-            Subst.MapDrive(selectedDrive, Program.DefaultDataPath);
+            Subst.MapDrive(selectedDrive, Program.DefaultFilesPath);
             Subst.SetDriveLabel(selectedDrive.ToString(), "GitDrive");
             Subst.SetDriveIcon(selectedDrive.ToString(), "C:\\Users\\Mrgaton\\OneDrive\\Programas\\Programas de CSharp\\GitDrive\\git_logo.ico");
         }
+
         private static char GetMappedDrive()
         {
-            foreach(var drive in DriveInfo.GetDrives())
+            foreach (var drive in DriveInfo.GetDrives())
             {
-                if (string.Equals(Subst.GetDriveMapping(drive.Name), Program.DefaultDataPath,StringComparison.InvariantCultureIgnoreCase)) return drive.Name.Split(':')[0][0];
+                if (string.Equals(Subst.GetDriveMapping(drive.Name), Program.DefaultFilesPath, StringComparison.InvariantCultureIgnoreCase)) return drive.Name.Split(':')[0][0];
             }
 
             return char.MinValue;
@@ -74,27 +73,29 @@ namespace GitDrive
             {
                 if (!DefineDosDevice(2, devName(letter), null)) throw new Win32Exception();
             }
+
             public static void SetDriveLabel(string driveLetter, string label)
             {
                 using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2\" + driveLetter))
                 {
                     if (key == null) return;
-                    
-                        key.SetValue("_LabelFromReg", label, RegistryValueKind.String);
-                    
+
+                    key.SetValue("_LabelFromReg", label, RegistryValueKind.String);
                 }
             }
+
             public static void SetDriveIcon(string driveLetter, string iconPath)
             {
                 using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\DriveIcons\" + driveLetter + @"\DefaultIcon"))
                 {
                     if (key == null) return;
-                    
-                        key.SetValue("", iconPath, RegistryValueKind.String);
-                    
+
+                    key.SetValue("", iconPath, RegistryValueKind.String);
                 }
             }
+
             public static string GetDriveMapping(char letter) => GetDriveMapping(letter + ":");
+
             public static string GetDriveMapping(string name)
             {
                 var sb = new StringBuilder(4096);
