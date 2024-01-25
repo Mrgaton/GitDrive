@@ -1,7 +1,5 @@
 ﻿using GitDrive.Files;
 using GitDrive.Github;
-using GitDrive.Helpers;
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace GitDrive
@@ -30,7 +28,7 @@ namespace GitDrive
 
             await GitHubApi.Init();
 
-            //FileWatcher.Init();
+            FileWatcher.Init();
 
             await SyncFiles.DownloadChanges();
 

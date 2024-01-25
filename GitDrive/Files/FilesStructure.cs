@@ -1,5 +1,4 @@
 ﻿using GitDrive.Helpers;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 namespace GitDrive.Files
@@ -19,7 +18,10 @@ namespace GitDrive.Files
         public DateTime CreateTime { get; set; }
         public DateTime LastWriteTime { get; set; }
         public string[] DataChunks { get; set; }
+        public int Version { get; set; }
+
         public string Encode() => DataEncoder.EncodeDataStr(JsonSerializer.Serialize(this, GetType()));
+
         public static SerealizedFile Decode(string encoded) => JsonSerializer.Deserialize<SerealizedFile>(DataEncoder.DecodeDataStr(encoded));
     }
 }

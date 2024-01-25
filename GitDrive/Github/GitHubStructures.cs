@@ -52,6 +52,7 @@ namespace GitDrive.Github
         [JsonPropertyName("tree")]
         public TreeObject[] Objects { get; set; }
     }
+
     public class RemoteTree
     {
         public override string ToString() => JsonSerializer.Serialize(this, GetType());
@@ -68,7 +69,6 @@ namespace GitDrive.Github
         [JsonPropertyName("truncated")]
         public bool Truncated { get; set; }
     }
-
 
     public class TreeObject
     {

@@ -138,7 +138,7 @@ namespace GitDrive.Github
 
             Console.WriteLine(json);
 
-            return (string)json["sha"];
+            return (string)json["object"]["sha"];
         }
 
         public static async void UploadFile(Commit commit)
@@ -189,17 +189,19 @@ namespace GitDrive.Github
             }
         }
 
-        public static async Task<byte[]> GetFileRaw(string path) =>await GetFileRaw(GitUsername,GitRepoName,DefaultBranch ,path);
+        public static async Task<byte[]> GetFileRaw(string path) => await GetFileRaw(GitUsername, GitRepoName, DefaultBranch, path);
+
         public static async Task<byte[]> GetFileRaw(string username, string repo, string branch, string path)
         {
             using (var req = new HttpRequestMessage(HttpMethod.Get, $"https://raw.githubusercontent.com/{username}/{repo}/{branch}/{path}"))
             {
-                using(var res = await client.SendAsync(req))
+                using (var res = await client.SendAsync(req))
                 {
                     return await res.Content.ReadAsByteArrayAsync();
                 }
             }
         }
+
         private static async Task<string> SendRequest(HttpRequestMessage request)
         {
             using (var req = request)
