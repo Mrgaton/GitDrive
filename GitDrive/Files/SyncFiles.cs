@@ -42,7 +42,7 @@ namespace GitDrive.Files
                             // TODO: Upload the newer local file
                         }
                     }
-                    
+
                     Console.ReadLine();
                 }
             }

@@ -1,11 +1,15 @@
-﻿using GitDrive.Files;
-using GitDrive.Github;
+﻿using GitDrive.Github;
+using GitDrive.Helpers;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
 
 namespace GitDrive
 {
     internal class Program
     {
+        public static string EncKey;
+
         public static readonly string DefaultProgramPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "GitDrive");
         public static readonly string DefaultFilesPath = Path.Combine(DefaultProgramPath, "UserFiles");
         public static readonly string DefaultSyncPath = Path.Combine(DefaultProgramPath, "SyncFiles");
@@ -22,6 +26,18 @@ namespace GitDrive
             GitHubApi.GitUsername = (string)config["username"];
             GitHubApi.GitRepoName = (string)config["repo"];
 
+            EncKey = DataEncoder.ToBase64Url(SHA512.Create().ComputeHash(Encoding.UTF8.GetBytes((string)config["encoding_key"])));
+
+            if (EncKey.Length < 64) throw new NotSupportedException("The encoding key is too short");
+
+            var encodedPath = DataEncoder.EncodeDirectoryPath("Mrgaton\\OneDrive\\Documentos");
+
+            Console.WriteLine(encodedPath);
+            Console.WriteLine(DataEncoder.DecodeDirectoryPath(encodedPath));
+
+            Console.WriteLine(DataEncoder.EncodeFilePath("Mrgaton\\OneDrive\\Documentos"));
+            //Console.ReadLine();
+
             DriveInit.InitDrive();
 
             await GitHubApi.GetRateLimit();
@@ -30,7 +46,7 @@ namespace GitDrive
 
             FileWatcher.Init();
 
-            await SyncFiles.DownloadChanges();
+            //await SyncFiles.DownloadChanges();
 
             /*var treeSha = await GitHubApi.CreateTree(new Tree()
             {
