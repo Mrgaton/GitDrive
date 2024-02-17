@@ -13,19 +13,21 @@ namespace GitDrive
 
         public static List<string> filesToUpload = new List<string>();
 
+        public static Dictionary<string, FileInfo> modifiedPaths = new Dictionary<string, FileInfo>(); // <Path,Directory>
+
         public static void Init()
         {
             watcher.Changed += OnChanged;
             watcher.Deleted += OnDeleted;
             watcher.Renamed += OnDeleted;
-            //watcher.Created += OnChanged;
+            watcher.Created += OnChanged;
 
-            SeachUnsyncedFiles(Program.DefaultFilesPath);
+            //SeachUnsyncedFiles(Program.DefaultFilesPath);
 
             filesSyncronizer = Task.Run(FilesSyncronizer);
         }
 
-        private static async Task SeachUnsyncedFiles(string path)
+        /*private static async Task SeachUnsyncedFiles(string path)
         {
             foreach (var file in Directory.EnumerateFiles(path))
             {
@@ -42,37 +44,18 @@ namespace GitDrive
             }
 
             foreach (var dir in Directory.EnumerateDirectories(path)) await SeachUnsyncedFiles(dir);
-        }
+        }*/
 
         public static void OnDeleted(object source, FileSystemEventArgs e)
         {
             Console.WriteLine("{0}, with path {1} has been {2}", e.Name, e.FullPath, e.ChangeType);
 
-            FileInfo finfo = (File.Exists(e.FullPath) || Directory.Exists(e.FullPath)) ? new FileInfo(e.FullPath) : null;
-
-            bool directory = finfo?.Attributes.HasFlag(FileAttributes.Directory) ?? false;
-
-            string relativePath = DataEncoder.EncodeDirectoryPath(GetParent(Program.DefaultFilesPath, directory ? e.FullPath : Path.GetDirectoryName(e.FullPath)));
-
-            if (directory)
-            {
-                string syncPath = Path.Join(Program.DefaultSyncPath, relativePath);
-                if (Directory.Exists(syncPath)) Directory.Delete(syncPath, true);
-                filesToUpload.Add(relativePath);
-                return;
-            }
-
-            string fileNameHash = DataEncoder.EncodeName(Path.GetFileName(e.FullPath));
-
-            foreach (var path in Directory.EnumerateFiles(Path.Join(Program.DefaultSyncPath, relativePath), fileNameHash + ".*"))
-            {
-                filesToUpload.Add(GetParent(Program.DefaultSyncPath, path));
-                File.Delete(path);
-            }
         }
 
         public static async void OnChanged(object source, FileSystemEventArgs e)
         {
+            modifiedPaths.Add(GetParent(Program.DefaultFilesPath, e.FullPath),new FileInfo(e.FullPath));
+
             Console.WriteLine("{0}, with path {1} has been {2}", e.Name, e.FullPath, e.ChangeType);
 
             FileInfo finfo = (File.Exists(e.FullPath) || Directory.Exists(e.FullPath)) ? new FileInfo(e.FullPath) : null;
@@ -101,63 +84,77 @@ namespace GitDrive
             file.CreateTime = finfo.CreationTimeUtc;
             file.LastWriteTime = finfo.LastWriteTime;
             file.DeletedFile = e.ChangeType == WatcherChangeTypes.Deleted;
-            file.Version = file.Version + 1;
+            file.Version++;
 
             string jsonPath = fileSyncPath + ".json";
 
-            if (!file.DeletedFile)
-            {
-                var fileData = File.ReadAllBytes(e.FullPath);
+            var fileData = File.ReadAllBytes(e.FullPath);
 
-                if (fileData.Length > 0)
-                {
-                    await File.WriteAllTextAsync(fileSyncPath + ".db", DataEncoder.EncodeData(fileData));
-                    file.DataChunks = [GetParent(Program.DefaultSyncPath, fileSyncPath + ".db")];
-                    await File.WriteAllTextAsync(jsonPath, file.Encode());
-                }
+            if (fileData.Length > 0)
+            {
+                await File.WriteAllTextAsync(fileSyncPath + ".db", DataEncoder.EncodeData(fileData));
+                file.DataChunks = [GetParent(Program.DefaultSyncPath, fileSyncPath + ".db")];
+                await File.WriteAllTextAsync(jsonPath, file.Encode());
             }
-            else if (File.Exists(jsonPath)) File.Delete(jsonPath);
 
             filesToUpload.Add(GetParent(Program.DefaultSyncPath, jsonPath));
 
             foreach (var f in file.DataChunks) filesToUpload.Add(f);
         }
 
-        public static void AddSimpleFile(ref List<TreeObject> list, string relativePath, string filePath)
-        {
-            list.Add(new TreeObject()
-            {
-                Content = File.ReadAllText(filePath),
-                Path = filePath.Substring(relativePath.Length).Replace('\\', '/').TrimStart('/'),
-                Mode = FileMode.FileBlob,
-                Type = FileType.Blob
-            });
-        }
-
-        public static void RemoveSimpleFile(ref List<TreeObject> list, string relativePath, string filePath)
-        {
-            list.Add(new TreeObject()
-            {
-                Path = filePath.Substring(relativePath.Length).Replace('\\', '/').TrimStart('/'),
-                Mode = FileMode.FileBlob,
-                Type = FileType.Commit,
-                Sha = null
-            });
-        }
-
-        public static void RemoveSimpleDirectory(ref List<TreeObject> list, string relativePath, string filePath)
-        {
-            list.Add(new TreeObject()
-            {
-                Path = filePath.Substring(relativePath.Length).Replace('\\', '/').TrimStart('/'),
-                Mode = FileMode.SubdirectoryTree,
-                Type = FileType.Blob,
-                Sha = null
-            });
-        }
+      
 
         private static string GetParent(string parent, string path) => path.Substring(parent.Length).TrimStart('\\');
 
+        private static List<TreeObject> ProcessChanges()
+        {
+            if (modifiedPaths.Count <= 0) return null;
+
+            List<TreeObject> comitChanges = new List<TreeObject>();
+
+            foreach(var path in modifiedPaths)
+            {
+                string parentPath = GetParent(Program.DefaultFilesPath, path.Key);
+
+                string relativeFilePath = DataEncoder.EncodeFilePath(parentPath);
+
+                string relativeFileName = Path.GetFileName(relativeFilePath);
+
+                bool directory = Directory.GetFiles(Path.Combine(Program.DefaultSyncPath, Path.GetPathRoot(relativeFilePath))).Any(f => f.StartsWith(relativeFileName));
+
+                string relativeDirectoryPath = directory ? DataEncoder.EncodeDirectoryPath(parentPath) : null;
+
+                if (path.Value == null)
+                {
+                    //Deleted object
+
+                    if (directory)
+                    {
+                        string syncDirectoryPath = Path.Join(Program.DefaultSyncPath, relativeDirectoryPath);
+
+                        if (Directory.Exists(syncDirectoryPath)) Directory.Delete(syncDirectoryPath, true);
+                        RemoveSimpleFile(ref comitChanges, syncDirectoryPath);
+                        continue;
+                    }
+
+                    foreach (var p in Directory.EnumerateFiles(Path.Join(Program.DefaultSyncPath, relativeDirectoryPath), relativeFileName + ".*"))
+                    {
+                        File.Delete(p);
+
+                        RemoveSimpleFile(ref comitChanges, relativeFilePath);
+                        filesToUpload.Add(GetParent(Program.DefaultSyncPath, p));
+                    }
+
+                    continue;
+                }
+                else
+                {
+                    //Added object
+                }
+            }
+
+            return comitChanges;
+        }
         public static async Task FilesSyncronizer()
         {
             while (true)
@@ -166,7 +163,7 @@ namespace GitDrive
                 {
                     await Task.Delay(5000);
 
-                    if (filesToUpload.Count() > 0)
+                    if (filesToUpload.Count > 0)
                     {
                         List<TreeObject> comitChanges = new List<TreeObject>();
 
@@ -203,7 +200,7 @@ namespace GitDrive
                             Force = true
                         });
 
-                        Console.WriteLine("jejej");
+                        Console.WriteLine("Uploaded successfully");
 
                         filesToUpload.Clear();
                     }
@@ -213,6 +210,41 @@ namespace GitDrive
                     Console.WriteLine(ex.ToString());
                 }
             }
+        }
+
+        public static void AddSimpleFile(ref List<TreeObject> list, string filePath) => AddSimpleFile(ref list, filePath, Program.DefaultSyncPath);
+        public static void AddSimpleFile(ref List<TreeObject> list, string filePath, string relativePath)
+        {
+            list.Add(new TreeObject()
+            {
+                Content = File.ReadAllText(filePath),
+                Path = filePath.Substring(relativePath.Length).Replace('\\', '/').TrimStart('/'),
+                Mode = FileMode.FileBlob,
+                Type = FileType.Blob
+            });
+        }
+        public static void RemoveSimpleFile(ref List<TreeObject> list, string filePath) => RemoveSimpleFile(ref list, filePath, Program.DefaultSyncPath);
+        public static void RemoveSimpleFile(ref List<TreeObject> list, string filePath, string relativePath)
+        {
+            list.Add(new TreeObject()
+            {
+                Path = filePath.Substring(relativePath.Length).Replace('\\', '/').TrimStart('/'),
+                Mode = FileMode.FileBlob,
+                Type = FileType.Commit,
+                Sha = null
+            });
+        }
+        public static void RemoveSimpleDirectory(ref List<TreeObject> list, string filePath) => RemoveSimpleDirectory(ref list, filePath, Program.DefaultSyncPath);
+
+        public static void RemoveSimpleDirectory(ref List<TreeObject> list, string filePath, string relativePath)
+        {
+            list.Add(new TreeObject()
+            {
+                Path = filePath.Substring(relativePath.Length).Replace('\\', '/').TrimStart('/'),
+                Mode = FileMode.SubdirectoryTree,
+                Type = FileType.Blob,
+                Sha = null
+            });
         }
     }
 }
